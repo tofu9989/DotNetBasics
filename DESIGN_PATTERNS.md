@@ -361,7 +361,7 @@ public sealed class HttpRequestBuilder
         return new HttpRequest(
             _method,
             _url,
-            new Dictionary<string, string>(_headers),
+            new Dictionary<string, string>(_headers, _headers.Comparer),
             _body);
     }
 }
@@ -1035,7 +1035,6 @@ Console.WriteLine(chain.Handle(new Expense(12_000m, "Conference trip")));
 - ASP.NET Core middleware pipeline.
 - `DelegatingHandler` chains in `HttpClient`.
 - Exception handling: `catch` blocks searched in order.
-- `ILogger` filter rules.
 
 **Watch out:** chains can be hard to debug. Log transitions or keep the chain
 short and explicit.
