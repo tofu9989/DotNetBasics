@@ -6,10 +6,10 @@ used in .NET applications.
 
 Each pattern below covers:
 
-- **Intent** — what problem it solves.
-- **When to use it** — and when not to.
-- **C# example** — minimal, modern C# (nullable enabled, file-scoped namespaces).
-- **In .NET** — framework types that already implement the pattern.
+- **Intent** is the problem it solves.
+- **When to use it** covers when it fits and when it does not.
+- **C# example** is minimal, modern C# (nullable enabled, file-scoped namespaces).
+- **In .NET** lists framework types that already implement the pattern.
 
 > Patterns are vocabulary, not goals. Reach for one when it removes a real
 > source of coupling or duplication, not because the name sounds impressive.
@@ -60,6 +60,7 @@ Each pattern below covers:
 - [Quick reference table](#quick-reference-table)
 - [Choosing a pattern](#choosing-a-pattern)
 - [Common pitfalls](#common-pitfalls)
+- [Further reading](#further-reading)
 
 ---
 
@@ -117,9 +118,8 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 
 **In .NET**
 
-- `System.Diagnostics.Stopwatch`-style static helpers, `Console`, `Environment`.
 - DI container singleton lifetime (`AddSingleton`).
-- Static `HttpClient` guidance (a single long-lived instance).
+- Process-wide static APIs such as `Console` and `Environment` provide global access, but they are not Singleton objects.
 
 **Watch out:** a singleton is global mutable state. If it grows more than a
 handful of members, split it or inject it.
@@ -128,8 +128,8 @@ handful of members, split it or inject it.
 
 ### 2. Factory Method
 
-**Intent:** Define an interface for creating an object, but let subclasses or
-factories decide which concrete type to instantiate.
+**Intent:** Define an interface for creating an object, but let subclasses decide
+which concrete type to instantiate.
 
 **When to use it**
 
@@ -181,14 +181,33 @@ INotification notification = NotificationFactory.Create(Channel.Sms);
 notification.Send("Build succeeded");
 ```
 
+The static factory above is a common C# variant. In the GoF Factory Method, an
+abstract creator declares the creation step and a subclass supplies the product.
+
+```csharp
+namespace Patterns.Creational;
+
+public abstract class NotificationService
+{
+    public void Notify(string message) => CreateNotification().Send(message);
+
+    protected abstract INotification CreateNotification();
+}
+
+public sealed class SmsNotificationService : NotificationService
+{
+    protected override INotification CreateNotification() => new SmsNotification();
+}
+```
+
 **In .NET**
 
 - `ILoggerFactory.CreateLogger<T>()`, `DbProviderFactory.CreateConnection()`.
 - `Activator.CreateInstance`, `IHttpClientFactory`, `WebApplication.CreateBuilder`.
 - `Func<T>` registrations in DI: `services.AddTransient<Func<Channel, INotification>>(...)`.
 
-**Watch out:** a `switch` factory is fine until it becomes a 30-branch monster;
-then prefer a registry or the concrete factory registration in DI.
+**Watch out:** a `switch` factory is fine until it becomes a 30-branch monster.
+Then prefer a registry or the concrete factory registration in DI.
 
 ---
 
@@ -199,8 +218,8 @@ classes. The client works with one factory and gets a consistent set of products
 
 **When to use it**
 
-- Products must match (Windows controls with Windows look, SQL types with SQL
-  connection behavior, one cloud provider's storage + queue + secret store).
+- Products must match (Windows controls with Windows look, SQL Server types with
+  SQL Server behavior, one cloud provider's storage, queue, and secret store).
 - You want to swap an entire family at configuration time.
 
 **C# example**
@@ -271,9 +290,9 @@ static void RenderForm(IUiFactory factory)
 
 - `DbProviderFactory` (connection + command + parameter families).
 - `ILoggerProvider`, `IServiceProvider`-driven provider families.
-- Cloud SDK abstractions (AWS/Azure/GCP) implemented behind one interface family.
+- Cloud SDK abstractions (AWS, Azure, or GCP) implemented behind one interface family.
 
-**Factory Method vs Abstract Factory:** Factory Method creates *one* product;
+**Factory Method vs Abstract Factory:** Factory Method creates *one* product.
 Abstract Factory creates a *family*. Abstract Factory is often implemented with
 several Factory Methods.
 
@@ -286,7 +305,7 @@ can produce different representations.
 
 **When to use it**
 
-- Constructors have many parameters, especially optional/boolean ones.
+- Constructors have many parameters, especially optional or boolean ones.
 - Object creation requires validation between steps.
 - You want an immutable result assembled from a fluent API.
 
@@ -342,7 +361,7 @@ public sealed class HttpRequestBuilder
         return new HttpRequest(
             _method,
             _url,
-            new Dictionary<string, string>(_headers),
+            new Dictionary<string, string>(_headers, _headers.Comparer),
             _body);
     }
 }
@@ -362,7 +381,7 @@ var request = new HttpRequestBuilder()
 **In .NET**
 
 - `StringBuilder` (incremental construction).
-- `HostBuilder` / `WebApplicationBuilder` (fluent configuration).
+- `HostBuilder` and `WebApplicationBuilder` (fluent configuration).
 - `UriBuilder`, `SqlConnectionStringBuilder`, `ConfigurationBuilder`.
 - `record` `with` expressions for copy-and-modify (adjacent to Builder).
 
@@ -382,7 +401,7 @@ constructing from scratch.
 - You need many near-identical objects with small variations.
 - You want to preserve state without exposing constructors.
 
-**C# example (records and deep copy)**
+**C# example (records and explicit deep copy)**
 
 ```csharp
 namespace Patterns.Creational;
@@ -416,15 +435,15 @@ var template = new Invoice(
 var discounted = template.WithDiscount(10m);
 ```
 
-For mutable classes, implement `ICloneable` or a dedicated `Clone()` and copy
-collections explicitly — `MemberwiseClone` is shallow.
+For mutable classes, implement a dedicated `Clone()` method and copy collections
+explicitly. `MemberwiseClone` is shallow, and `ICloneable` is rarely the right
+public API.
 
 **In .NET**
 
-- `record` and `with` expressions (shallow copy plus modifications).
-- `ICloneable` (avoid unless you document shallow vs deep semantics).
-- `Array.Clone`, `List<T>` copy constructors.
-- `ICloneable` is rarely the right public API; prefer explicit copy methods.
+- `record` and `with` expressions copy an object and apply changes.
+- `Array.Clone` and `List<T>` copy constructors make shallow copies.
+- `ICloneable` exists, but it does not say whether the copy is shallow or deep.
 
 ---
 
@@ -451,21 +470,18 @@ otherwise incompatible types work together.
 ```csharp
 namespace Patterns.Structural;
 
-// Third-party type you cannot change.
 public sealed class LegacyXmlLogger
 {
     public void WriteXmlEntry(string level, string text) =>
         Console.WriteLine($"<log level=\"{level}\">{text}</log>");
 }
 
-// Your application's contract.
 public interface IAppLogger
 {
     void Info(string message);
     void Error(string message);
 }
 
-// Adapter.
 public sealed class LegacyLoggerAdapter : IAppLogger
 {
     private readonly LegacyXmlLogger _legacy;
@@ -480,10 +496,10 @@ public sealed class LegacyLoggerAdapter : IAppLogger
 
 **In .NET**
 
-- `Stream` adapters (`NetworkStream`, `GZipStream`, `CryptoStream`).
-- `TextReader`/`TextWriter` adapters over streams (`StreamReader`).
+- `StreamReader` and `StreamWriter` adapt a byte stream to text.
+- `NetworkStream` adapts a socket to a `Stream`.
 - `IEnumerable<T>` adapters such as `Enumerable.Cast<T>()`.
-- gRPC/HTTP client wrappers around a domain interface.
+- gRPC or HTTP client wrappers around a domain interface.
 
 ---
 
@@ -504,7 +520,6 @@ compose two hierarchies.
 ```csharp
 namespace Patterns.Structural;
 
-// Implementation hierarchy.
 public interface IMessageChannel
 {
     void Deliver(string title, string body);
@@ -522,7 +537,6 @@ public sealed class SlackChannel : IMessageChannel
         Console.WriteLine($"Slack [{title}] {body}");
 }
 
-// Abstraction hierarchy.
 public abstract class Message
 {
     protected Message(IMessageChannel channel) => Channel = channel;
@@ -564,11 +578,11 @@ message.Send();
 
 - `ILogger` providers (logging abstraction + provider implementations).
 - ADO.NET: `DbConnection` abstraction + provider-specific implementations.
-- `TextWriter`/`Stream` composition in serializers.
+- .NET MAUI handlers (cross-platform control abstraction plus platform-specific handlers).
 
 **Bridge vs Strategy:** the structures look similar. Use Bridge when both the
-abstraction and the implementation are expected to grow their own hierarchies;
-use Strategy when you are just swapping one algorithm behind one interface.
+abstraction and the implementation are expected to grow their own hierarchies.
+Use Strategy when you are swapping one algorithm behind one interface.
 
 ---
 
@@ -644,9 +658,9 @@ root.Print();
 **In .NET**
 
 - `System.Linq.Expressions.Expression` trees.
-- `XElement`/`XNode` in LINQ to XML.
+- `XElement` and `XNode` in LINQ to XML.
 - UI control trees (WPF `Visual`, WinForms `Control`).
-- `DirectoryInfo`/`FileSystemInfo` hierarchies (loosely).
+- `DirectoryInfo` and `FileSystemInfo` hierarchies (loosely).
 
 **Watch out:** a uniform interface can force leaf types to implement methods that
 make no sense (`Add` on a file). Decide whether to throw or to split interfaces.
@@ -687,7 +701,7 @@ public sealed class DatabasePriceProvider : IPriceProvider
 public sealed class CachingPriceProvider : IPriceProvider
 {
     private readonly IPriceProvider _inner;
-    private readonly Dictionary<string, decimal> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, decimal> _cache = new(StringComparer.Ordinal);
 
     public CachingPriceProvider(IPriceProvider inner) => _inner = inner;
 
@@ -734,10 +748,10 @@ IPriceProvider provider = new LoggingPriceProvider(
 - `DelegatingHandler` in `HttpClient` pipelines.
 - DI decorators registered manually or with a decorator library.
 
-**Decorator vs Proxy:** both wrap. A decorator *adds* behavior; a proxy *controls
+**Decorator vs Proxy:** both wrap. A decorator *adds* behavior. A proxy *controls
 access* to the wrapped object.
 
-**Decorator vs Adapter:** an adapter changes the interface; a decorator keeps it.
+**Decorator vs Adapter:** an adapter changes the interface. A decorator keeps it.
 
 ---
 
@@ -796,9 +810,9 @@ new VideoPlayer().Play("movie.mkv");
 
 **In .NET**
 
-- `HttpClient` (a facade over sockets, headers, redirects, retries).
+- `HttpClient` (a facade over sockets, headers, redirects, and connection pooling).
 - `File` static class over `FileStream` internals.
-- `EmailSender`/`IEmailSender` wrappers over SMTP.
+- `EmailSender` or `IEmailSender` wrappers over SMTP.
 - Application services in clean architecture.
 
 **Watch out:** a facade can become a god class. Keep it to orchestration, not
@@ -809,7 +823,7 @@ business rules.
 ### 11. Flyweight
 
 **Intent:** Share common state between many objects to reduce memory use.
-Intrinsic (shared, immutable) state is stored once; extrinsic state is passed in.
+Intrinsic (shared, immutable) state is stored once. Extrinsic state is passed in.
 
 **When to use it**
 
@@ -869,11 +883,11 @@ var runs = "hello".Select((c, i) => new CharacterRun(factory.Get(c, "Consolas", 
 **In .NET**
 
 - `string.Intern` and the CLR string pool.
-- `Encoding`/`CultureInfo` caches.
-- `ArrayPool<T>` / `MemoryPool<T>` (object pooling rather than sharing, adjacent idea).
+- `Encoding` and `CultureInfo` caches.
+- `ArrayPool<T>` and `MemoryPool<T>` (object pooling rather than sharing, adjacent idea).
 - `Type` objects and metadata tokens.
 
-**Watch out:** only optimize when memory is actually a problem; measure first.
+**Watch out:** only optimize when memory is actually a problem. Measure first.
 
 ---
 
@@ -935,13 +949,13 @@ public sealed class ProtectedDocumentProxy : IDocument
 
 **In .NET**
 
-- `DispatchProxy` (runtime-generated proxies; used by mocking frameworks).
+- `DispatchProxy` (runtime-generated proxies used by mocking frameworks).
 - EF Core lazy-loading proxies (`Microsoft.EntityFrameworkCore.Proxies`).
-- WCF/remoting transparent proxies (legacy).
+- WCF or .NET Remoting transparent proxies (legacy).
 - `Castle DynamicProxy` (third-party, used by many frameworks).
 
 **Proxy vs Decorator:** proxy controls access and usually manages the wrapped
-object's lifecycle; decorator adds behavior around an object supplied to it.
+object's lifecycle. A decorator adds behavior around an object supplied to it.
 
 ---
 
@@ -960,7 +974,7 @@ handler decides whether to process or forward the request.
 **When to use it**
 
 - Multiple steps can handle a request and the handler is chosen at runtime.
-- You want to add/remove processing steps without touching callers.
+- You want to add or remove processing steps without touching callers.
 - Validation pipelines, approval workflows, middleware.
 
 **C# example**
@@ -1021,9 +1035,8 @@ Console.WriteLine(chain.Handle(new Expense(12_000m, "Conference trip")));
 - ASP.NET Core middleware pipeline.
 - `DelegatingHandler` chains in `HttpClient`.
 - Exception handling: `catch` blocks searched in order.
-- `ILogger` filter rules and scopes.
 
-**Watch out:** chains can be hard to debug; log transitions or keep the chain
+**Watch out:** chains can be hard to debug. Log transitions or keep the chain
 short and explicit.
 
 ---
@@ -1035,7 +1048,7 @@ queuing, logging, and undo.
 
 **When to use it**
 
-- You need undo/redo.
+- You need undo and redo.
 - Requests must be queued, scheduled, or retried.
 - You want to log or audit operations.
 - UI actions should be decoupled from business logic.
@@ -1060,7 +1073,7 @@ public sealed class InsertTextCommand : ICommand
 {
     private readonly TextDocument _document;
     private readonly string _text;
-    private string _previous = string.Empty;
+    private readonly Stack<string> _previous = new();
 
     public InsertTextCommand(TextDocument document, string text)
     {
@@ -1070,13 +1083,16 @@ public sealed class InsertTextCommand : ICommand
 
     public void Execute()
     {
-        _previous = _document.Text;
+        _previous.Push(_document.Text);
         _document.Text += _text;
     }
 
     public void Undo()
     {
-        _document.Text = _previous;
+        if (_previous.TryPop(out var previous))
+        {
+            _document.Text = previous;
+        }
     }
 }
 
@@ -1105,21 +1121,20 @@ Usage:
 ```csharp
 var document = new TextDocument();
 var history = new CommandHistory();
-history.Execute(new InsertTextCommand(document, "Hello "));
-history.Execute(new InsertTextCommand(document, "world"));
+history.Execute(new InsertTextCommand(document, "Hello"));
+history.Execute(new InsertTextCommand(document, " world"));
 history.Undo();
 Console.WriteLine(document.Text); // Hello
 ```
 
 **In .NET**
 
-- `System.Windows.Input.ICommand` (WPF/MVVM).
-- `ICommand` in `System.CommandLine` (CLI verbs).
-- Message/queue handlers (MediatR `IRequestHandler` is a command-dispatcher variant).
-- EF Core migrations are commands with `Up`/`Down`.
+- `System.Windows.Input.ICommand` (WPF and MVVM).
+- `System.CommandLine.Command` with `SetAction` (CLI commands).
+- Message and queue handlers (MediatR `IRequestHandler` is a command-dispatcher variant).
 
 **Watch out:** command objects that wrap a single method call with no undo,
-queueing, or logging need are just extra allocations — call the method.
+queueing, or logging need are extra allocations. Call the method.
 
 ---
 
@@ -1206,9 +1221,8 @@ var eligible = rule.Evaluate(new Dictionary<string, int>
 
 **In .NET**
 
-- `System.Linq.Expressions` (expression trees + `Expression.Lambda().Compile()`).
+- `System.Linq.Expressions` builds expression trees. `LambdaExpression.Compile()` turns a lambda into a delegate.
 - `Regex` (a full regex engine, not the GoF structure).
-- `System.Text.Json` document model for querying.
 - FluentValidation rule trees.
 
 **Watch out:** hand-rolled interpreters do not scale to real languages. Use a
@@ -1241,21 +1255,24 @@ public sealed class RingBuffer<T> : IEnumerable<T>
 
     public RingBuffer(IEnumerable<T> items, int capacity)
     {
+        if (capacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be positive.");
+        }
+
         _items = new T[capacity];
-        var index = 0;
-        _start = 0;
+        var count = 0;
+        var next = 0;
 
         foreach (var item in items)
         {
-            if (index >= capacity)
-            {
-                break;
-            }
-
-            _items[index++] = item;
+            _items[next] = item;
+            next = (next + 1) % capacity;
+            count++;
         }
 
-        _count = index;
+        _count = Math.Min(count, capacity);
+        _start = count > capacity ? next : 0;
     }
 
     public IEnumerator<T> GetEnumerator()
@@ -1274,23 +1291,20 @@ public sealed class RingBuffer<T> : IEnumerable<T>
 Usage:
 
 ```csharp
-var buffer = new RingBuffer<int>(Enumerable.Range(1, 5), 5);
-foreach (var value in buffer)
-{
-    Console.WriteLine(value);
-}
+var buffer = new RingBuffer<int>(Enumerable.Range(1, 7), 5);
+Console.WriteLine(string.Join(" ", buffer)); // 3 4 5 6 7
 ```
 
 **In .NET**
 
-- `IEnumerable<T>` / `IEnumerator<T>` and `yield return`.
-- `IAsyncEnumerable<T>` / `await foreach`.
+- `IEnumerable<T>` and `IEnumerator<T>` with `yield return`.
+- `IAsyncEnumerable<T>` and `await foreach`.
 - `List<T>.Enumerator` (struct enumerator to avoid allocations).
 - LINQ operators (`Where`, `Select`) are iterator pipelines.
 
-**Watch out:** never mutate the collection while enumerating unless the type
-supports it; `yield` methods capture state and defer execution, which surprises
-people when side effects are involved.
+**Watch out:** never mutate the collection while you enumerate it unless the type
+supports that. A `yield` method captures state and defers execution, which can
+surprise you when side effects are involved.
 
 ---
 
@@ -1303,7 +1317,7 @@ through a central mediator instead of referring to each other directly.
 
 - Many-to-many communication between components (chat room, UI dialogs).
 - You want to decouple colleagues but keep a central coordination point.
-- Request/response dispatch in application layers (MediatR-style).
+- Request and response dispatch in application layers (MediatR-style).
 
 **C# example (chat room)**
 
@@ -1361,17 +1375,18 @@ var room = new ChatRoom();
 var alice = new Participant("Alice", room);
 var bob = new Participant("Bob", room);
 alice.Say("Hello");
+bob.Say("Hi Alice");
 ```
 
 **In .NET**
 
 - `MediatR` (`IMediator`, `INotification`).
 - UI frameworks: a dialog mediates between its controls.
-- `IServiceProvider` as a lookup mediator (use sparingly — service locator issues).
+- `IServiceProvider` as a lookup mediator (use sparingly, because it turns into a service locator).
 - SignalR hubs mediating client messages.
 
 **Watch out:** the mediator can become a god object. Keep handlers small and
-split by feature. Do not use MediatR just because it is popular; direct calls
+split by feature. Do not use MediatR because it is popular. Direct calls
 are often clearer.
 
 ---
@@ -1383,7 +1398,7 @@ encapsulation.
 
 **When to use it**
 
-- Undo/redo, snapshots, transactions, checkpoints.
+- You need undo and redo, snapshots, or checkpoints.
 - You must externalize state but keep it immutable and opaque to the caretaker.
 
 **C# example**
@@ -1391,7 +1406,9 @@ encapsulation.
 ```csharp
 namespace Patterns.Behavioral;
 
-public sealed record EditorSnapshot(string Text, int CursorPosition);
+public interface IEditorSnapshot
+{
+}
 
 public sealed class TextEditor
 {
@@ -1404,22 +1421,29 @@ public sealed class TextEditor
         CursorPosition = Text.Length;
     }
 
-    public EditorSnapshot Save() => new(Text, CursorPosition);
+    public IEditorSnapshot Save() => new Snapshot(Text, CursorPosition);
 
-    public void Restore(EditorSnapshot snapshot)
+    public void Restore(IEditorSnapshot snapshot)
     {
-        Text = snapshot.Text;
-        CursorPosition = snapshot.CursorPosition;
+        if (snapshot is not Snapshot state)
+        {
+            throw new ArgumentException("Unknown snapshot type.", nameof(snapshot));
+        }
+
+        Text = state.Text;
+        CursorPosition = state.CursorPosition;
     }
+
+    private sealed record Snapshot(string Text, int CursorPosition) : IEditorSnapshot;
 }
 
 public sealed class EditorHistory
 {
-    private readonly Stack<EditorSnapshot> _snapshots = new();
+    private readonly Stack<IEditorSnapshot> _snapshots = new();
 
-    public void Push(EditorSnapshot snapshot) => _snapshots.Push(snapshot);
+    public void Push(IEditorSnapshot snapshot) => _snapshots.Push(snapshot);
 
-    public EditorSnapshot? Pop() => _snapshots.TryPop(out var snapshot) ? snapshot : null;
+    public IEditorSnapshot? Pop() => _snapshots.TryPop(out var snapshot) ? snapshot : null;
 }
 ```
 
@@ -1445,7 +1469,7 @@ Console.WriteLine(editor.Text); // Hello
 **In .NET**
 
 - `record` as an immutable snapshot.
-- Database transactions and savepoints.
+- Undo stacks in editors and design tools.
 - `System.Text.Json` serialization for persisted snapshots.
 - EF Core `ChangeTracker` (state capture, not a strict memento).
 
@@ -1470,16 +1494,16 @@ all dependents are notified automatically.
 ```csharp
 namespace Patterns.Behavioral;
 
-public interface IObserver<in T>
+public interface ISubscriber<in T>
 {
     void Update(T value);
 }
 
 public sealed class Subject<T>
 {
-    private readonly List<IObserver<T>> _observers = new();
+    private readonly List<ISubscriber<T>> _observers = new();
 
-    public IDisposable Subscribe(IObserver<T> observer)
+    public IDisposable Subscribe(ISubscriber<T> observer)
     {
         _observers.Add(observer);
         return new Subscription(() => _observers.Remove(observer));
@@ -1503,7 +1527,7 @@ public sealed class Subject<T>
     }
 }
 
-public sealed class ConsoleObserver<T> : IObserver<T>
+public sealed class ConsoleSubscriber<T> : ISubscriber<T>
 {
     public void Update(T value) => Console.WriteLine($"Received: {value}");
 }
@@ -1513,7 +1537,7 @@ Usage:
 
 ```csharp
 var subject = new Subject<int>();
-using var subscription = subject.Subscribe(new ConsoleObserver<int>());
+using var subscription = subject.Subscribe(new ConsoleSubscriber<int>());
 subject.Publish(42);
 ```
 
@@ -1531,15 +1555,15 @@ public sealed class TemperatureSensor
 
 **In .NET**
 
-- `event` / `EventHandler<T>` (the idiomatic C# observer).
-- `IObservable<T>` / `IObserver<T>` and Rx.NET.
-- `INotifyPropertyChanged` / `INotifyCollectionChanged` in UI binding.
+- `event` and `EventHandler<T>` (the idiomatic C# observer).
+- `IObservable<T>` and `IObserver<T>` with Rx.NET.
+- `INotifyPropertyChanged` and `INotifyCollectionChanged` in UI binding.
 - `IOptionsMonitor<T>.OnChange`, `IHostApplicationLifetime` callbacks.
 - SignalR, message buses, domain event dispatchers.
 
-**Watch out:** events hold strong references — always unsubscribe or use weak
-events/`IDisposable` subscriptions. Exceptions in one observer can stop the rest;
-decide on isolation explicitly.
+**Watch out:** events hold strong references. Always unsubscribe or use weak
+events or `IDisposable` subscriptions. An exception in one observer can stop the
+rest. Decide on isolation explicitly.
 
 ---
 
@@ -1572,8 +1596,6 @@ public sealed class Order
     public Order() => State = new PendingState();
 
     public IOrderState State { get; private set; }
-
-    internal void TransitionTo(IOrderState state) => State = state;
 
     public void Pay() => State = State.Pay();
     public void Ship() => State = State.Ship();
@@ -1625,12 +1647,20 @@ public sealed class CancelledState : IOrderState
 }
 ```
 
+Usage:
+
+```csharp
+var order = new Order();
+order.Pay();
+order.Ship();
+Console.WriteLine(order.State.Name); // Shipped
+```
+
 **In .NET**
 
 - `Stream` state, `HttpClient` connection states.
-- EF Core entity state (`EntityState`).
-- Stateless library / custom state machines.
-- Workflow engines (Windows Workflow, Camunda, Durable Functions orchestrations).
+- Stateless library and custom state machines.
+- Workflow engines (Camunda, Durable Functions orchestrations).
 
 **Watch out:** for simple two-state flags, an enum plus a guard is clearer than
 a class hierarchy. Use State when transitions and per-state behavior are real.
@@ -1645,7 +1675,7 @@ interchangeable at runtime.
 **When to use it**
 
 - Multiple algorithms for one task (sorting, pricing, compression, auth).
-- You want to replace `if/else` or `switch` selection over policies.
+- You want to replace `if` and `else` chains or `switch` selection over policies.
 - Behavior should be configurable or injected.
 
 **C# example**
@@ -1689,6 +1719,7 @@ Usage:
 ```csharp
 var calculator = new ShippingCalculator(new WeightBasedShipping());
 var cost = calculator.Calculate(weightKg: 3m, distanceKm: 400m);
+Console.WriteLine(cost); // 7.5
 ```
 
 DI registration with a keyed strategy:
@@ -1700,13 +1731,13 @@ builder.Services.AddKeyedSingleton<IShippingStrategy, WeightBasedShipping>("weig
 
 **In .NET**
 
-- `IComparer<T>` / `Comparison<T>` passed to `List<T>.Sort`.
+- `IComparer<T>` and `Comparison<T>` passed to `List<T>.Sort`.
 - `IEqualityComparer<T>` for dictionaries and LINQ.
 - `IAuthenticationHandler`, `IOutputFormatter`, `ICompressionProvider`.
 - `Func<T, TResult>` delegates as lightweight strategies.
 
-**Strategy vs State:** Strategy selects an algorithm; State transitions itself
-as a consequence of operations. Strategy is usually stateless and injected;
+**Strategy vs State:** Strategy selects an algorithm. State transitions itself
+as a consequence of operations. Strategy is usually stateless and injected.
 State is stateful and drives transitions.
 
 ---
@@ -1729,7 +1760,6 @@ namespace Patterns.Behavioral;
 
 public abstract class DataExporter
 {
-    // Template method: fixed skeleton.
     public void Export(string destination)
     {
         var data = Load();
@@ -1772,14 +1802,19 @@ public sealed class JsonExporter : DataExporter
 }
 ```
 
+Usage:
+
+```csharp
+new CsvExporter().Export("orders.csv");
+```
+
 **In .NET**
 
 - `Stream` and `TextWriter` base classes.
-- ASP.NET Core `ControllerBase` lifecycle and filters.
-- `HttpClientHandler`/`DelegatingHandler` templates.
+- ASP.NET Core MVC action filters (`Controller.OnActionExecutionAsync`).
 - EF Core `DbContext.SaveChanges` pipeline with overridable hooks.
 
-**C# alternative:** in modern C#, composition with delegates/Strategy is often
+**C# alternative:** in modern C#, composition with delegates or Strategy is often
 preferable to inheritance. Prefer Template Method when the skeleton genuinely
 belongs to the base type.
 
@@ -1866,57 +1901,57 @@ Console.WriteLine(expression.Accept(new EvaluateVisitor())); // 14
 
 **In .NET**
 
-- LINQ to XML `XElement.Accept`-style traversals (`Descendants`, `Nodes`).
 - Roslyn syntax tree visitors (`CSharpSyntaxVisitor<T>`).
 - `System.Linq.Expressions.ExpressionVisitor`.
-- Serializer walkers (custom `JsonConverter` implementations).
+- Roslyn analyzers and code fixers that walk syntax trees.
 
-**Visitor vs pattern matching:** if the type set is small and closed, C# `switch`
-expressions over records (discriminated unions via `abstract record`) are simpler
-and faster to maintain than Visitor. Use Visitor when operations multiply and
-live in separate assemblies.
+**Visitor vs pattern matching:** if the type set is small and closed, a `switch`
+expression over an abstract record hierarchy is simpler than Visitor. C# has no
+built-in discriminated unions, so the compiler does not check that the switch
+covers every case. Use Visitor when operations multiply and live in separate
+assemblies.
 
 ---
 
 ## Patterns already in the framework
 
-You rarely need to implement these from scratch; recognize them so you reuse the
+You rarely need to implement these from scratch. Recognize them so you reuse the
 platform instead of reinventing it.
 
 | Pattern | .NET building blocks |
 | --- | --- |
-| Singleton | `AddSingleton`, static `HttpClient` guidance, `Lazy<T>` |
+| Singleton | `AddSingleton`, `Lazy<T>` |
 | Factory Method | `ILoggerFactory`, `DbProviderFactory`, `Activator.CreateInstance`, `IHttpClientFactory` |
 | Abstract Factory | `DbProviderFactory`, provider families behind one abstraction |
 | Builder | `StringBuilder`, `HostBuilder`, `ConfigurationBuilder`, `UriBuilder` |
-| Prototype | `record` + `with`, `ICloneable`, copy constructors |
-| Adapter | `StreamReader`/`StreamWriter`, `GZipStream`, `Enumerable.Cast<T>` |
+| Prototype | `record` + `with`, copy constructors |
+| Adapter | `StreamReader` and `StreamWriter`, `Enumerable.Cast<T>` |
 | Bridge | `ILogger` + providers, ADO.NET provider model |
 | Composite | `Expression` trees, `XElement`, UI control trees |
 | Decorator | `Stream` wrappers, ASP.NET Core middleware, `DelegatingHandler` |
 | Facade | `HttpClient`, `File`, application services |
-| Flyweight | string interning, `Encoding` caches, `ArrayPool<T>` |
+| Flyweight | string interning, `Encoding` caches |
 | Proxy | `DispatchProxy`, EF Core lazy loading, mocking frameworks |
-| Chain of Responsibility | middleware, `DelegatingHandler`, exception filters |
-| Command | `ICommand` (WPF, `System.CommandLine`), MediatR requests |
-| Interpreter | `Expression` trees, `Regex`, `System.Text.Json` queries |
+| Chain of Responsibility | middleware, `DelegatingHandler` |
+| Command | `System.Windows.Input.ICommand` (WPF), `System.CommandLine.Command` (CLI), MediatR requests |
+| Interpreter | `Expression` trees, `Regex` |
 | Iterator | `IEnumerable<T>`, `yield return`, `IAsyncEnumerable<T>` |
 | Mediator | MediatR, SignalR hubs, dialog coordination |
-| Memento | `record` snapshots, transactions, `ChangeTracker` |
+| Memento | `record` snapshots, undo stacks, `ChangeTracker` |
 | Observer | `event`, `IObservable<T>`, `INotifyPropertyChanged`, `IOptionsMonitor` |
-| State | `EntityState`, `Stream` state, state machine libraries |
+| State | `Stream` state, state machine libraries |
 | Strategy | `IComparer<T>`, `IEqualityComparer<T>`, `ICompressionProvider` |
-| Template Method | `Stream`/`TextWriter`, `ControllerBase` lifecycle |
-| Visitor | `ExpressionVisitor`, Roslyn syntax visitors, LINQ to XML |
+| Template Method | `Stream` and `TextWriter`, `Controller.OnActionExecutionAsync` |
+| Visitor | `ExpressionVisitor`, Roslyn syntax visitors |
 
 ---
 
 ## Architectural patterns used in .NET apps
 
-These are not GoF patterns; they are larger-scale patterns you will meet in
+These are not GoF patterns. They are larger-scale patterns you will meet in
 production .NET code.
 
-### Dependency Injection / Composition Root
+### Dependency Injection and Composition Root
 
 Register abstractions in one place (`Program.cs`) and inject them. This is the
 default pattern in ASP.NET Core and the generic host.
@@ -1935,10 +1970,10 @@ app.Run();
 
 Rules of thumb:
 
-- Constructor injection only; avoid service locator.
-- Register the composition root once; do not call `BuildServiceProvider` inside
+- Constructor injection only. Avoid service locator.
+- Configure the container once in the composition root. Do not call `BuildServiceProvider` inside
   business code.
-- Prefer `Scoped` for request-bound work, `Singleton` for stateless/shared
+- Prefer `Scoped` for request-bound work, `Singleton` for stateless or shared
   services, `Transient` for cheap stateful objects.
 
 ### Options pattern
@@ -1954,7 +1989,11 @@ public sealed class SmtpOptions
     public int Port { get; set; } = 587;
     public bool UseSsl { get; set; } = true;
 }
+```
 
+Register the options in `Program.cs` before `builder.Build()`:
+
+```csharp
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 ```
 
@@ -1980,13 +2019,15 @@ public interface IUnitOfWork
 
 EF Core's `DbContext` is already a unit of work and its `DbSet<T>` is close to a
 repository. Add repositories when you need to isolate the ORM, test without a
-database, or enforce aggregate boundaries — not by default.
+database, or enforce aggregate boundaries. Do not add them by default.
 
 ### Specification
 
 Encapsulate query criteria in composable objects.
 
 ```csharp
+using System.Linq.Expressions;
+
 public abstract class Specification<T>
 {
     public abstract Expression<Func<T, bool>> ToExpression();
@@ -2011,50 +2052,82 @@ internal sealed class AndSpecification<T> : Specification<T>
     {
         var left = _left.ToExpression();
         var right = _right.ToExpression();
-        var parameter = Expression.Parameter(typeof(T));
-        var body = Expression.AndAlso(
-            Expression.Invoke(left, parameter),
-            Expression.Invoke(right, parameter));
+        var parameter = Expression.Parameter(typeof(T), "entity");
+        var leftBody = new ParameterReplacer(left.Parameters[0], parameter).Visit(left.Body);
+        var rightBody = new ParameterReplacer(right.Parameters[0], parameter).Visit(right.Body);
+        var body = Expression.AndAlso(leftBody, rightBody);
         return Expression.Lambda<Func<T, bool>>(body, parameter);
     }
 }
+
+internal sealed class ParameterReplacer : ExpressionVisitor
+{
+    private readonly ParameterExpression _from;
+    private readonly ParameterExpression _to;
+
+    public ParameterReplacer(ParameterExpression from, ParameterExpression to)
+    {
+        _from = from;
+        _to = to;
+    }
+
+    protected override Expression VisitParameter(ParameterExpression node) =>
+        node == _from ? _to : base.VisitParameter(node);
+}
 ```
 
-### Result / Either
+The parameter replacer keeps the composed expression free of `Expression.Invoke`,
+which query providers often cannot translate.
+
+### Result and Either
 
 Avoid exceptions for expected failures.
 
 ```csharp
-public readonly record struct Result<T>(bool IsSuccess, T? Value, string? Error)
+public abstract record Result<T>
 {
-    public static Result<T> Ok(T value) => new(true, value, null);
-    public static Result<T> Fail(string error) => new(false, default, error);
+    public sealed record Success(T Value) : Result<T>;
+    public sealed record Failure(string Error) : Result<T>;
 }
+```
+
+Usage:
+
+```csharp
+Result<int> Parse(string text) =>
+    int.TryParse(text, out var value)
+        ? new Result<int>.Success(value)
+        : new Result<int>.Failure("Not a number.");
+
+var result = Parse("42");
+Console.WriteLine(result is Result<int>.Success { Value: var number } ? number : 0); // 42
 ```
 
 ### CQRS and messaging
 
-Separate writes (commands) from reads (queries). At small scale this is just
-separate handler classes. At larger scale it brings separate read models,
+Separate writes (commands) from reads (queries). At small scale, use separate
+handler classes. At larger scale, CQRS brings separate read models,
 eventual consistency, and messaging (MassTransit, NServiceBus, RabbitMQ, Azure
 Service Bus, Kafka).
 
-### Outbox / inbox
+### Outbox and inbox
 
 Persist outgoing messages in the same transaction as domain changes, then publish
-them reliably. Use it when database writes and message publication must not
-diverge.
+them reliably. The inbox side records consumed message IDs so a retried delivery
+does not apply the same change twice. Use both when database writes and message
+publication must not diverge.
 
-### Pipeline / middleware
+### Pipeline and middleware
 
 Compose cross-cutting behavior as a sequence of handlers (ASP.NET Core
 middleware, MediatR pipeline behaviors, `DelegatingHandler`). This is the
 Chain of Responsibility pattern applied at application scale.
 
-### Saga / process manager
+### Saga and process manager
 
-Coordinate multi-step, long-running workflows with compensations. Relevant for
-distributed transactions and Durable Functions orchestrations.
+Coordinate multi-step, long-running workflows with compensating actions instead
+of a distributed transaction. Relevant for workflows that span services, such as
+Durable Functions orchestrations.
 
 ---
 
@@ -2072,18 +2145,18 @@ distributed transactions and Durable Functions orchestrations.
 | Composite | Structural | Treat trees uniformly | `Expression` trees, UI |
 | Decorator | Structural | Wrap to add behavior | Streams, middleware |
 | Facade | Structural | Simplify a subsystem | `HttpClient`, services |
-| Flyweight | Structural | Share intrinsic state | string interning, pools |
+| Flyweight | Structural | Share intrinsic state | string interning, shared caches |
 | Proxy | Structural | Control access | `DispatchProxy`, lazy loading |
 | Chain of Responsibility | Behavioral | Pass request along handlers | Middleware, handlers |
-| Command | Behavioral | Request as object | `ICommand`, MediatR |
+| Command | Behavioral | Request as object | `ICommand`, CLI commands, MediatR |
 | Interpreter | Behavioral | Evaluate a small language | Expression trees, rules |
 | Iterator | Behavioral | Sequential traversal | `IEnumerable<T>`, `yield` |
 | Mediator | Behavioral | Central communication hub | MediatR, SignalR |
-| Memento | Behavioral | Snapshot and restore | Undo, transactions |
+| Memento | Behavioral | Snapshot and restore | Undo stacks, snapshots |
 | Observer | Behavioral | Notify subscribers | events, `IObservable<T>` |
 | State | Behavioral | Behavior changes with state | Order workflows |
 | Strategy | Behavioral | Swap algorithms | `IComparer<T>`, policies |
-| Template Method | Behavioral | Fixed skeleton, overridable steps | Base classes, lifecycle |
+| Template Method | Behavioral | Fixed skeleton, overridable steps | Base classes, action filters |
 | Visitor | Behavioral | New operations on stable types | Expression visitors |
 
 ---
@@ -2094,8 +2167,8 @@ Ask these questions in order:
 
 1. **Is a simpler construct enough?** A delegate, `record`, local function, or
    plain interface often replaces a pattern.
-2. **What varies?** Creation → creational; composition → structural; behavior
-   and communication → behavioral.
+2. **What varies?** Creation maps to creational patterns, composition to
+   structural patterns, and behavior or communication to behavioral patterns.
 3. **Who owns the variation?** If the caller chooses per call, inject a Strategy
    or use a Factory. If the object changes over time, use State.
 4. **Is the structure stable but operations growing?** Visitor.
@@ -2119,28 +2192,28 @@ explicit code over pattern ceremony.
 - **Anemic strategy factories.** A `switch` that constructs strategies on every
   call usually belongs in DI keyed services.
 - **Decorator order bugs.** Caching outside logging behaves differently from
-  logging outside caching; document and test the order.
+  logging outside caching. Document and test the order.
 - **Leaky abstractions.** A repository that returns `IQueryable<T>` is not
   isolating the ORM.
 - **Events without unsubscription.** Long-lived publishers keep subscribers alive.
 - **Visitor rigidity.** Every new element type requires touching every visitor.
   Use pattern matching for closed, small hierarchies.
-- **Interpreter overreach.** Hand-written parsers become unmaintainable; use a
+- **Interpreter overreach.** Hand-written parsers become unmaintainable. Use a
   parser generator.
 - **Async in constructors.** Factories should return `Task<T>` or use an explicit
   `InitializeAsync`, never block in a constructor.
 - **Thread safety assumptions.** Singletons and caches need explicit concurrency
-  design; `Dictionary` is not thread-safe for writes.
+  design. `Dictionary` is not thread-safe for writes, or for a write during a read.
 - **Ignoring cancellation.** Pass `CancellationToken` through all async layers.
 
 ---
 
 ## Further reading
 
-- *Design Patterns: Elements of Reusable Object-Oriented Software* — Gamma, Helm,
-  Johnson, Vlissides.
-- *Head First Design Patterns* — Freeman & Robson.
-- *Patterns of Enterprise Application Architecture* — Martin Fowler.
-- *Dependency Injection Principles, Practices, and Patterns* — Seemann & van Deursen.
+- *Design Patterns: Elements of Reusable Object-Oriented Software* by Gamma, Helm,
+  Johnson, and Vlissides.
+- *Head First Design Patterns* by Freeman and Robson.
+- *Patterns of Enterprise Application Architecture* by Martin Fowler.
+- *Dependency Injection Principles, Practices, and Patterns* by Seemann and van Deursen.
 - .NET documentation: <https://learn.microsoft.com/dotnet/standard/>
 - .NET runtime source: <https://github.com/dotnet/runtime>
