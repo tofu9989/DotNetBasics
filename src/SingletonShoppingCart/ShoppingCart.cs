@@ -21,7 +21,7 @@ public sealed class ShoppingCart
         {
             if (_lines.TryGetValue(item.Sku, out CartItem? existing))
             {
-                _lines[item.Sku] = existing with { Quantity = existing.Quantity + item.Quantity };
+                _lines[item.Sku] = existing with { Quantity = checked(existing.Quantity + item.Quantity) };
             }
             else
             {
