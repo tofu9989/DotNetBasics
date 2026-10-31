@@ -35,6 +35,12 @@ public sealed class Checkout
         ArgumentException.ThrowIfNullOrWhiteSpace(sku);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(unitPrice);
+
+        if (decimal.Round(unitPrice, 2) != unitPrice)
+        {
+            throw new ArgumentException("Prices support two decimal places.", nameof(unitPrice));
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantity);
         _lines.Add(new CartLine(sku, name, unitPrice, quantity));
     }
