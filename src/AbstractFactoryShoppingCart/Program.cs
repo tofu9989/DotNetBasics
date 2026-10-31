@@ -92,6 +92,32 @@ try
 
     Check(blankNameRejected, "Checkout.Add rejects a blank name");
 
+    Checkout precisionProbe = new(new UsStorefrontFactory());
+
+    bool subCentPriceRejected = false;
+    try
+    {
+        precisionProbe.Add("SP-01", "Sub-cent item", 0.005m, 1);
+    }
+    catch (ArgumentException)
+    {
+        subCentPriceRejected = true;
+    }
+
+    Check(subCentPriceRejected, "Checkout.Add rejects prices beyond two decimal places");
+
+    bool threeDecimalPriceRejected = false;
+    try
+    {
+        precisionProbe.Add("TH-01", "Near-threshold item", 74.999m, 1);
+    }
+    catch (ArgumentException)
+    {
+        threeDecimalPriceRejected = true;
+    }
+
+    Check(threeDecimalPriceRejected, "Checkout.Add rejects a 74.999 price");
+
     Console.WriteLine("PASS: all checks passed");
     return 0;
 }
